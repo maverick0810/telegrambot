@@ -1,6 +1,10 @@
+from dotenv import load_dotenv
+import os
 
-TELEGRAM_BOT_TOKEN = "7670723585:AAEacMjFIMHarGFjk3Vkfixzc8CbQCEPo1Y"
-GEMINI_API_KEY = "AIzaSyD1hhhTheB1tv-Nbez9mYUJ9Dfhs-fxwRY"
+load_dotenv()
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 # import logging
 # import re
 # from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
