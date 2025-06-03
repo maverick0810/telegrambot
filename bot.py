@@ -3,7 +3,7 @@ import os
 
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 
 # import logging
 # import re
@@ -780,21 +780,31 @@ from telegram.ext import (
 )
 import google.generativeai as genai
 
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
+def fetch_latest_gemini_key():
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    creds = ServiceAccountCredentials.from_json_keyfile_name('telegrambot\credentials.json', scope)
+    client = gspread.authorize(creds)   
+    sheet = client.open("APIkeys").sheet1
+    keys = sheet.col_values(1)[1:]  # Skip the header
+    return keys[-1] if keys else None
+
+GEMINI_API_KEY = fetch_latest_gemini_key()
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-pro")
 
-# === LOGGING ===
+model = genai.GenerativeModel("gemini-2.0-flash")
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 
-# === STATE ===
+
 user_sessions = {}
 user_stats = {}
 
-# === TOPICS ===
 TOPICS = [
     "Reading Comprehension-Based Legal Reasoning",
     "Current Affairs",
@@ -803,7 +813,6 @@ TOPICS = [
     "Legal Principle - Fact Application",
 ]
 
-# === PROMPT ===
 def build_prompt(topic):
     return f"""
 Generate one CLAT-level passage with 3 to 6 MCQ questions on the topic '{topic}'.
