@@ -779,28 +779,29 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 )
 import google.generativeai as genai
-
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
+# === GOOGLE SHEET KEY FETCH ===
 def fetch_latest_gemini_key():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    creds = ServiceAccountCredentials.from_json_keyfile_name('telegrambot\credentials.json', scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_name('telegrambot/credentials.json', scope)
     client = gspread.authorize(creds)   
     sheet = client.open("APIkeys").sheet1
     keys = sheet.col_values(1)[1:]  # Skip the header
     return keys[-1] if keys else None
 
-GEMINI_API_KEY = fetch_latest_gemini_key()
-genai.configure(api_key=GEMINI_API_KEY)
+def initialize_model():
+    key = fetch_latest_gemini_key()
+    genai.configure(api_key=key)
+    return genai.GenerativeModel("gemini-2.0-flash")
 
-model = genai.GenerativeModel("gemini-2.0-flash")
+model = initialize_model()
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
-
 
 user_sessions = {}
 user_stats = {}
@@ -831,11 +832,12 @@ Explanation: <Explanation in 1-2 lines>
 Q2: ... (and so on)
 """
 
-# === PARSER ===
 def parse_passage_and_questions(text):
     passage_match = re.search(r"Passage:(.*?)\nQ\d+:", text, re.DOTALL)
-    questions = re.findall(r"Q\d+:\s*(.*?)\nA\.\s*(.*?)\nB\.\s*(.*?)\nC\.\s*(.*?)\nD\.\s*(.*?)\nAnswer:\s*([A-Da-d])\nExplanation:\s*(.*?)(?=\nQ\d+:|$)", text, re.DOTALL)
-
+    questions = re.findall(
+        r"Q\d+:\s*(.*?)\nA\.\s*(.*?)\nB\.\s*(.*?)\nC\.\s*(.*?)\nD\.\s*(.*?)\nAnswer:\s*([A-Da-d])\nExplanation:\s*(.*?)(?=\nQ\d+:|$)",
+        text, re.DOTALL
+    )
     passage = passage_match.group(1).strip() if passage_match else "Passage not found."
     parsed_questions = []
     for q_text, a, b, c, d, answer, explanation in questions:
@@ -870,9 +872,21 @@ async def handle_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def generate_new_passage(context, user_id, topic):
     prompt = build_prompt(topic)
-    response = model.generate_content(prompt)
-    passage, questions = parse_passage_and_questions(response.text)
+    global model
+    try:
+        response = model.generate_content(prompt)
+    except Exception as e:
+        logging.warning(f"Initial API call failed: {e}")
+        # Try with a new API key
+        model = initialize_model()
+        try:
+            response = model.generate_content(prompt)
+        except Exception as e2:
+            logging.error(f"Second API call also failed: {e2}")
+            await context.bot.send_message(chat_id=user_id, text="⚠️ Error generating passage. Please try again later.")
+            return
 
+    passage, questions = parse_passage_and_questions(response.text)
     user_sessions[user_id] = {
         "topic": topic,
         "passage": passage,
@@ -971,6 +985,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === MAIN ===
 def main():
+    TELEGRAM_BOT_TOKEN = "<YOUR_TELEGRAM_BOT_TOKEN_HERE>"
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -982,3 +997,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
