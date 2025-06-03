@@ -785,7 +785,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 # === GOOGLE SHEET KEY FETCH ===
 def fetch_latest_gemini_key():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    creds = ServiceAccountCredentials.from_json_keyfile_name('C:\Users\HP\Desktop\langchain_models\telegrambot\credentials.json', scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_name('telegrambot/credentials.json', scope)
     client = gspread.authorize(creds)   
     sheet = client.open("APIkeys").sheet1
     keys = sheet.col_values(1)[1:]  # Skip the header
