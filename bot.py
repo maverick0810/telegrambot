@@ -773,30 +773,23 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # if __name__ == "__main__":
 #     main()
 import logging
+import os
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 )
+from dotenv import load_dotenv
 import google.generativeai as genai
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 
-# === GOOGLE SHEET KEY FETCH ===
-def fetch_latest_gemini_key():
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    creds = ServiceAccountCredentials.from_json_keyfile_name('telegrambot/credentials.json', scope)
-    client = gspread.authorize(creds)   
-    sheet = client.open("APIkeys").sheet1
-    keys = sheet.col_values(1)[1:]  # Skip the header
-    return keys[-1] if keys else None
+# === LOAD API KEY FROM .env ===
+load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    raise ValueError("⚠️ GOOGLE_API_KEY not found in .env file.")
 
-def initialize_model():
-    key = fetch_latest_gemini_key()
-    genai.configure(api_key=key)
-    return genai.GenerativeModel("gemini-2.0-flash")
-
-model = initialize_model()
+genai.configure(api_key=GOOGLE_API_KEY)
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -872,19 +865,12 @@ async def handle_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def generate_new_passage(context, user_id, topic):
     prompt = build_prompt(topic)
-    global model
     try:
         response = model.generate_content(prompt)
     except Exception as e:
-        logging.warning(f"Initial API call failed: {e}")
-        # Try with a new API key
-        model = initialize_model()
-        try:
-            response = model.generate_content(prompt)
-        except Exception as e2:
-            logging.error(f"Second API call also failed: {e2}")
-            await context.bot.send_message(chat_id=user_id, text="⚠️ Error generating passage. Please try again later.")
-            return
+        logging.error(f"Gemini API Error: {e}")
+        await context.bot.send_message(chat_id=user_id, text="⚠️ Error generating passage. Please try again later.")
+        return
 
     passage, questions = parse_passage_and_questions(response.text)
     user_sessions[user_id] = {
@@ -920,9 +906,11 @@ async def ask_next_question(update, context, user_id):
         passage_correct = stats['correct'] - (stats['total'] - passage_total)
         passage_incorrect = stats['incorrect'] - (stats['total'] - passage_total)
 
-        keyboard = [[InlineKeyboardButton("➡️ Next Passage", callback_data="next")],
-                   [InlineKeyboardButton("❌ Stop", callback_data="stop")],
-                   [InlineKeyboardButton("🔄 Switch Topic", callback_data="switch_topic")]]
+        keyboard = [
+            [InlineKeyboardButton("➡️ Next Passage", callback_data="next")],
+            [InlineKeyboardButton("❌ Stop", callback_data="stop")],
+            [InlineKeyboardButton("🔄 Switch Topic", callback_data="switch_topic")]
+        ]
         await context.bot.send_message(
             chat_id=user_id,
             text=(f"✅ Passage Complete!\n\nCorrect this passage: {passage_correct}\n"
@@ -985,7 +973,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === MAIN ===
 def main():
-    TELEGRAM_BOT_TOKEN = "<YOUR_TELEGRAM_BOT_TOKEN_HERE>"
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not TELEGRAM_BOT_TOKEN:
+        raise ValueError("⚠️ TELEGRAM_BOT_TOKEN not found in .env file.")
+
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -997,4 +988,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
